@@ -164,6 +164,7 @@ struct KVCacheConfig {
     bool    enable_remote_cache          = false;
     bool    write_cache_sync             = false;
     bool    enable_tiered_memory_cache   = false;
+    bool        enable_batch_cache_reuse   = true;
     int64_t device_cache_min_free_blocks = 0;
 
     // Remote connector configuration fields

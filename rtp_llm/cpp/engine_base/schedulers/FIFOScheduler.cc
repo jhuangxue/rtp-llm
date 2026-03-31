@@ -11,6 +11,9 @@
 using namespace std;
 namespace rtp_llm {
 
+// Initialize static atomic counter for generating unique batch Epoch IDs (starts from 1)
+std::atomic<int64_t> FIFOScheduler::batch_epoch_counter_{0};
+
 FIFOScheduler::FIFOScheduler(const RuntimeConfig&                   runtime_config,
                              const ModelConfig&                     model_config,
                              const PDSepConfig&                     pd_sep_config,
@@ -18,7 +21,8 @@ FIFOScheduler::FIFOScheduler(const RuntimeConfig&                   runtime_conf
                              const ModelSpecificConfig&             model_specific_config,
                              const std::shared_ptr<KVCacheManager>& cache_manager,
                              const kmonitor::MetricsReporterPtr     metrics_reporter,
-                             const int                              max_score_len):
+                             const int                              max_score_len,
+                             bool                                   enable_batch_cache_reuse):
     pd_sep_config_(pd_sep_config),
     model_specific_config_(model_specific_config),
     cache_manager_(cache_manager),
@@ -26,7 +30,8 @@ FIFOScheduler::FIFOScheduler(const RuntimeConfig&                   runtime_conf
     max_batch_tokens_size_(runtime_config.fifo_scheduler_config.max_batch_tokens_size),
     max_generate_batch_size_(runtime_config.max_generate_batch_size),
     need_fill_fake_stream_(parallelism_config.dp_size > 1 && parallelism_config.tp_rank == 0),
-    metrics_reporter_(metrics_reporter) {
+    metrics_reporter_(metrics_reporter),
+    enable_batch_cache_reuse_(enable_batch_cache_reuse) {
     RTP_LLM_LOG_INFO("max_generate_batch_size is [%d], max_batch_tokens_size is [%d]",
                      max_generate_batch_size_,
                      max_batch_tokens_size_);
@@ -173,8 +178,10 @@ bool FIFOScheduler::evaluateNewStream(const list<GenerateStreamPtr>& streams,
 list<GenerateStreamPtr> FIFOScheduler::scheduleNew(size_t reserve_step) {
     RTP_LLM_PROFILE_FUNCTION();
     list<GenerateStreamPtr> new_streams;
+    int64_t                 batch_epoch = enable_batch_cache_reuse_ ? ++batch_epoch_counter_ : 0;
     for (auto it = waiting_streams_.begin(); it != waiting_streams_.end();) {
         auto& stream = *it;
+        (*it)->setBatchEpoch(batch_epoch);
         if (evaluateNewStream(new_streams, *it, reserve_step)) {
             RTP_LLM_LOG_DEBUG("stream [%ld] add to new queue", stream->streamId());
             // if setRunning fails, it must be in stopped state; release KV blocks and erase immediately
