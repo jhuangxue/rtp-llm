@@ -41,7 +41,7 @@ class PureTpRouterBase(FusedMoeDataRouter):
     def check_conditions(cls, checker: Any, config: MoEConfigAdapter) -> None:
         """Check if PureTpRouter can handle the configuration"""
         resolver = MoeConfigResolver()
-        checker.check(resolver.is_single_gpu(config) or resolver.is_tp_equal_ep(config))
+        checker.check(resolver.is_pure_tp_mode(config))
         checker.check(resolver.use_all_gather(config))
 
     def __init__(
