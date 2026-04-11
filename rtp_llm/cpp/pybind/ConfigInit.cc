@@ -373,7 +373,8 @@ PYBIND11_MODULE(libth_transformer_config, m) {
                                       self.reco_get_broadcast_timeout,
                                       self.reco_put_broadcast_timeout,
                                       self.reco_client_config,
-                                      self.ssm_state_dtype);
+                                      self.ssm_state_dtype,
+                                      self.enable_batch_cache_reuse);
             },
             [](py::tuple t) {
                 if (t.size() != 44)
@@ -424,6 +425,7 @@ PYBIND11_MODULE(libth_transformer_config, m) {
                     c.reco_put_broadcast_timeout           = t[41].cast<int>();
                     c.reco_client_config                   = t[42].cast<std::string>();
                     c.ssm_state_dtype                      = t[43].cast<std::string>();
+                    c.enable_batch_cache_reuse             = t[44].cast<bool>();
                 } catch (const std::exception& e) {
                     throw std::runtime_error(std::string("KVCacheConfig unpickle error: ") + e.what());
                 }

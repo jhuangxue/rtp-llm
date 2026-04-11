@@ -501,7 +501,5 @@ def setup_args() -> PyEnvConfigs:
     if batch_reuse_val is None:
         batch_reuse_val = py_env_configs.kv_cache_config.reuse_cache
     py_env_configs.kv_cache_config.enable_batch_cache_reuse = bool(batch_reuse_val)
-    # Propagate to env so subprocess (backend_server) picks it up via env_name
-    os.environ["ENABLE_BATCH_CACHE_REUSE"] = "1" if py_env_configs.kv_cache_config.enable_batch_cache_reuse else "0"
 
     return py_env_configs
