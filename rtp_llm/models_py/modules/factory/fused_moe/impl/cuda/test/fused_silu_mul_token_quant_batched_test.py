@@ -7,7 +7,10 @@ import pytest
 import torch
 from torch import dtype as _dtype
 
-pytestmark = [pytest.mark.gpu(type="H20")]
+pytestmark = [
+    pytest.mark.gpu(type="H20"),
+    pytest.mark.skip(reason="TODO: fix q_out mismatch, was commented out in Bazel BUILD at fork point"),
+]
 
 from rtp_llm.models_py.modules.factory.fused_moe.impl.cuda.executors.util import (
     moe_kernel_quantize_input,

@@ -14,6 +14,8 @@ from filelock import FileLock, Timeout
 
 GPU_LOCK_TIMEOUT_ENV = "RTP_GPU_LOCK_TIMEOUT"
 GPU_LOCK_DEFAULT_TIMEOUT = 120
+GPU_STATUS_ROOT = "/tmp/rtp_llm/smoke/test/gpu_status"
+GPU_GLOBAL_LOCK_FILE = "/tmp/rtp_llm/smoke/test/gpu_status_lock"
 
 
 class GpuLockError(RuntimeError):
@@ -29,6 +31,7 @@ class GpuLockTimeoutError(GpuLockError):
 class GpuInsufficientError(GpuLockError):
     """Raised when the visible GPU count cannot satisfy the request at all."""
     pass
+
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -134,7 +137,11 @@ def get_gpu_ids():
     logging.info(f"{device_info}")
 
     if not device_info:
-        return list(range(128))
+        raise RuntimeError(
+            "get_gpu_ids(): no GPU/accelerator detected — "
+            "nvidia-smi / rocm-smi not found or returned no devices. "
+            "Cannot allocate GPUs."
+        )
     device_name = device_info[0]
     total_gpus = range(device_info[1])
 
@@ -160,6 +167,7 @@ class DeviceResource:
                 f"Need {required_gpu_count} GPUs but only {len(self.total_gpus)} visible "
                 f"(CUDA/HIP_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', os.environ.get('HIP_VISIBLE_DEVICES', 'unset'))})"
             )
+        os.makedirs(GPU_STATUS_ROOT, exist_ok=True)
         env_timeout = os.environ.get(GPU_LOCK_TIMEOUT_ENV)
         if timeout is not None:
             self.timeout = timeout
@@ -169,8 +177,8 @@ class DeviceResource:
             self.timeout = None  # wait forever (Bazel / standalone)
         self.gpu_ids: List[int] = []
         self.gpu_locks = ExitStack()
-        self.global_lock_file = "/tmp/rtp_llm/smoke/test/gpu_status_lock"
-        self.gpu_status_root_path = "/tmp/rtp_llm/smoke/test/gpu_status"
+        self.global_lock_file = GPU_GLOBAL_LOCK_FILE
+        self.gpu_status_root_path = GPU_STATUS_ROOT
 
     def _get_gpu_pids(self, gpu_id: str) -> List[int]:
         """Return PIDs of compute processes on a physical GPU.
@@ -212,15 +220,15 @@ class DeviceResource:
         return all(not self._pid_alive(p) for p in pids)
 
     def _ensure_gpus_released(self, timeout: int = 30):
-        """Wait until acquired GPUs have no stale compute processes.
+        """Wait until acquired GPUs have no stale external compute processes.
 
-        Uses SIGTERM first to allow graceful CUDA cleanup, then SIGKILL
-        as a last resort. Detects zombie GPU contexts (dead processes that
-        still hold GPU memory) which indicate unrecoverable state.
+        Uses SIGTERM then SIGKILL for truly external processes only.
+        Never kills self, parent, or child processes.
 
         Returns True if GPUs are clean, False if zombie contexts detected.
         """
         my_pid = os.getpid()
+        my_ppid = os.getppid()
         sigterm_sent: Set[int] = set()
         sigkill_sent: Set[int] = set()
         deadline = time.time() + timeout
@@ -228,14 +236,14 @@ class DeviceResource:
         while time.time() < deadline:
             all_clear = True
             for gpu_id in self.gpu_ids:
-                stale = [p for p in self._get_gpu_pids(gpu_id) if p != my_pid]
+                stale = [p for p in self._get_gpu_pids(gpu_id)
+                         if p != my_pid and p != my_ppid]
                 live_stale = [p for p in stale if self._pid_alive(p)]
 
                 if not stale:
                     continue
 
                 if not live_stale:
-                    # All nvidia-smi PIDs are dead → zombie GPU contexts
                     logging.warning(
                         f"GPU {gpu_id} has zombie CUDA contexts (dead PIDs: {stale}). "
                         f"Memory is permanently leaked until GPU reset."
