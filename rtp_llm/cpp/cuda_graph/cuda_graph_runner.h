@@ -44,7 +44,7 @@ public:
             throw std::runtime_error("CudaGraphRunner constructor: kernel_tokens_per_block must be > 0.");
         }
         if (graph_params.is_prefill_cuda_graph_mode) {
-            max_bs_ = graph_params.max_context_batch_size;
+            max_bs_ = graph_params.concurrency_limit;
         } else {
             max_bs_ = graph_params.concurrency_limit;
         }
