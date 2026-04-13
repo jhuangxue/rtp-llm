@@ -520,6 +520,7 @@ class RemoteREAPIPlugin:
             f"{outputs_prefix}"
             "echo \">>>RTP_REMOTE_HOST_IP $(hostname -I 2>/dev/null | awk '{print $1}')\"; "
             'echo ">>>PHASE:pytest_start $(date +%s)"; '
+            "unset CUDA_VISIBLE_DEVICES HIP_VISIBLE_DEVICES 2>/dev/null || true; "
             f"python rtp_llm/test/utils/device_resource.py "
             f"python -m pytest -xvs --tb=long --timeout={self.timeout} "
             f"--override-ini='addopts=' {ignore_args} "
@@ -1427,6 +1428,10 @@ class RemoteREAPIPlugin:
         lines.append('echo ">>>PHASE:pytest_start $(date +%s)"')
         lines.append("final_ec=0; any_ran=0")
         lines.append('export PYTHONPATH="$PWD:${PYTHONPATH:-}"')
+        lines.append(
+            'echo ">>>INHERITED_CVD=${CUDA_VISIBLE_DEVICES:-unset} HVD=${HIP_VISIBLE_DEVICES:-unset}"; '
+            "unset CUDA_VISIBLE_DEVICES HIP_VISIBLE_DEVICES 2>/dev/null || true"
+        )
 
         for tier, n_workers, phase_mark in phases:
             mark_arg = f"-m {shlex.quote(phase_mark)} " if phase_mark else ""
