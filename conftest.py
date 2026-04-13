@@ -1,69 +1,15 @@
 # ============================================================================
-# xdist Per-Worker GPU Lock (MUST be first — before any torch import)
-#
-# Uses DeviceResource to dynamically acquire GPUs via file locks.
-# CUDA_VISIBLE_DEVICES is set to the locked GPUs before torch can import.
-# flock() is auto-released by OS when the worker process exits (even on crash).
-# ============================================================================
-import os as _os
-import sys as _sys
-
-_xdist_worker = _os.environ.get("PYTEST_XDIST_WORKER")
-_worker_device_resource = None  # held for worker process lifetime
-
-if _xdist_worker:
-    _gpu_count = int(_os.environ.get("GPU_COUNT_PER_WORKER", "1"))
-    # CRITICAL: import device_resource WITHOUT triggering rtp_llm/__init__.py,
-    # which imports torch (via torch_patch.py). Torch must NOT be imported before
-    # we set CUDA_VISIBLE_DEVICES, or it binds to all visible GPUs permanently.
-    import importlib.util as _ilu
-    _dr_rel = _os.path.join(
-        _os.path.dirname(_os.path.abspath(__file__)),
-        "rtp_llm", "test", "utils", "device_resource.py",
-    )
-    _dr_path = None
-    if _os.path.isfile(_dr_rel):
-        _dr_path = _dr_rel
-    else:
-        for _sp in _sys.path:
-            _candidate = _os.path.join(_sp, "rtp_llm", "test", "utils", "device_resource.py")
-            if _os.path.isfile(_candidate):
-                _dr_path = _candidate
-                break
-    if not _dr_path:
-        raise RuntimeError("Cannot find rtp_llm/test/utils/device_resource.py on sys.path")
-    _dr_spec = _ilu.spec_from_file_location("_device_resource_early", _dr_path)
-    _dr_mod = _ilu.module_from_spec(_dr_spec)
-    _dr_spec.loader.exec_module(_dr_mod)
-
-    _device_info = _dr_mod.get_device_info()
-    if not _device_info:
-        raise RuntimeError(
-            f"xdist worker {_xdist_worker}: get_device_info() returned None — "
-            f"nvidia-smi / rocm-smi not found or not working. "
-            f"Cannot isolate GPUs without device detection."
-        )
-    _worker_device_resource = _dr_mod.DeviceResource(required_gpu_count=_gpu_count)
-    _worker_device_resource.__enter__()
-    _env_name = _dr_mod._get_visible_devices_env(_device_info[0])
-    _os.environ[_env_name] = ",".join(_worker_device_resource.gpu_ids)
-    _diag_msg = (
-        f"[conftest] worker={_xdist_worker} pid={_os.getpid()} "
-        f"{_env_name}={_os.environ[_env_name]} "
-        f"locked_gpus={_worker_device_resource.gpu_ids}"
-    )
-    _sys.stderr.write(_diag_msg + "\n")
-    _sys.stderr.flush()
-    _diag_dir = "/tmp/rtp_llm_gpu_diag"
-    _os.makedirs(_diag_dir, exist_ok=True)
-    with open(f"{_diag_dir}/{_xdist_worker}", "w") as _f:
-        _f.write(_diag_msg + "\n")
-
+# GPU isolation is handled by:
+#   - gpu_pin_early.py (-p gpu_pin_early): xdist workers (Path A)
+#   - device_resource.py __main__: per-test remote / smoke (Path B)
+# Both set CUDA_VISIBLE_DEVICES BEFORE entry-point plugins trigger cuInit().
+# This conftest only handles markers, diagnostics, and memory cleanup.
 # ============================================================================
 import logging
 import os
-import pytest
 import re
+
+import pytest
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,13 +29,24 @@ def _log_gpu_assignment():
     cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "unset")
     hvd = os.environ.get("HIP_VISIBLE_DEVICES", "unset")
     gpus = f"CUDA={cvd}" if hvd == "unset" else f"HIP={hvd}"
-    locked = _worker_device_resource.gpu_ids if _worker_device_resource else "N/A"
-    print(f"\n[GPU_ASSIGN] {worker} pid={os.getpid()} {gpus} locked={locked}")
+    print(f"\n[GPU_ASSIGN] {worker} pid={os.getpid()} {gpus}")
+    try:
+        import torch
+        if torch.cuda.is_available():
+            dc = torch.cuda.device_count()
+            free, total = torch.cuda.mem_get_info(0)
+            name = torch.cuda.get_device_name(0)
+            print(
+                f"[GPU_VERIFY] {worker} device_count={dc} name={name} "
+                f"free={free/1e9:.1f}GB total={total/1e9:.1f}GB"
+            )
+    except Exception as e:
+        print(f"[GPU_VERIFY] {worker} error: {e}")
     yield
 
 
 # ============================================================================
-# Per-test GPU memory monitoring + isolation check
+# Per-test GPU memory monitoring + cleanup
 # ============================================================================
 
 def _get_gpu_mem_mb():
@@ -107,30 +64,11 @@ def _get_gpu_mem_mb():
 
 
 @pytest.fixture(scope="function", autouse=True)
-def _gpu_isolation_and_mem_monitor(request):
-    """Per-test GPU guard + memory tracking.
-
-    - Checks that the test's gpu(count=N) fits the worker's allocation.
-    - Logs GPU memory before/after the test to detect leaks.
-    """
-    gpu_marker = request.node.get_closest_marker("gpu")
-    if gpu_marker and _xdist_worker and _worker_device_resource:
-        gpu_count = int(gpu_marker.kwargs.get("count", 1))
-        if gpu_count > len(_worker_device_resource.gpu_ids):
-            pytest.fail(
-                f"Test needs {gpu_count} GPUs but worker locked "
-                f"{len(_worker_device_resource.gpu_ids)} "
-                f"(GPU_COUNT_PER_WORKER="
-                f"{_os.environ.get('GPU_COUNT_PER_WORKER', '?')}). "
-                f"Check phase configuration.",
-                pytrace=False,
-            )
-
+def _gpu_mem_monitor(request):
+    """Per-test GPU memory tracking and aggressive cleanup between tests."""
     before = _get_gpu_mem_mb()
     yield
 
-    # Aggressively reclaim GPU memory between tests to prevent OOM from
-    # accumulated allocations in the same xdist worker process.
     try:
         import gc
         gc.collect()
@@ -150,8 +88,8 @@ def _gpu_isolation_and_mem_monitor(request):
         worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
         if abs(delta_alloc) > 10 or abs(delta_reserved) > 100:
             logger.warning(
-                "[GPU_MEM] %s %s: alloc %.0f→%.0f MB (Δ%+.0f), "
-                "reserved %.0f→%.0f MB (Δ%+.0f)",
+                "[GPU_MEM] %s %s: alloc %.0f->%.0f MB (d%+.0f), "
+                "reserved %.0f->%.0f MB (d%+.0f)",
                 worker, request.node.nodeid,
                 alloc_before, alloc_after, delta_alloc,
                 reserved_before, reserved_after, delta_reserved,
@@ -191,73 +129,6 @@ def pytest_configure(config):
         for count in re.findall(r'(?<!\w)gpu_count_(\d+)\b', rewritten):
             _register_synthetic_gpu_marker(config, int(count))
         logger.debug(f"Modified marker expression: {marker_expr} -> {rewritten}")
-
-
-# ============================================================================
-# GPU Lock for smoke tests (unchanged — uses DeviceResource directly)
-# ============================================================================
-
-def _get_gpu_count_from_markers(node) -> int:
-    """Get required GPU count from @pytest.mark.gpu(count=N), GPU_COUNT env, or default 1."""
-    gpu_marker = node.get_closest_marker("gpu")
-    if gpu_marker:
-        if "count" in gpu_marker.kwargs:
-            return int(gpu_marker.kwargs["count"])
-        return 1
-
-    gpu_count_env = os.environ.get("GPU_COUNT")
-    if gpu_count_env:
-        try:
-            return int(gpu_count_env)
-        except ValueError:
-            logger.warning(f"Invalid GPU_COUNT env: {gpu_count_env}, using default 1")
-
-    return 1
-
-
-@pytest.fixture(scope="function")
-def gpu_lock(request):
-    """Function-scoped GPU lock for smoke tests.
-
-    Acquires N GPUs via DeviceResource file locks and sets CUDA_VISIBLE_DEVICES.
-    This only affects SUBPROCESSES spawned after the fixture (e.g., server
-    processes in smoke tests).  For py-ut under xdist, the module-level
-    DeviceResource handles GPU assignment instead.
-    """
-    if request.node.get_closest_marker("no_gpu_lock"):
-        yield None
-        return
-
-    gpu_count = _get_gpu_count_from_markers(request.node)
-    if gpu_count < 1:
-        yield None
-        return
-
-    from rtp_llm.test.utils.device_resource import (
-        DeviceResource,
-        GpuLockError,
-        GPU_LOCK_DEFAULT_TIMEOUT,
-        GPU_LOCK_TIMEOUT_ENV,
-        get_device_info,
-        _get_visible_devices_env,
-    )
-
-    device_info = get_device_info()
-    if not device_info:
-        yield None
-        return
-
-    device_name, _ = device_info
-    env_name = _get_visible_devices_env(device_name)
-
-    lock_timeout = int(os.environ.get(GPU_LOCK_TIMEOUT_ENV, GPU_LOCK_DEFAULT_TIMEOUT))
-    try:
-        with DeviceResource(required_gpu_count=gpu_count, timeout=lock_timeout) as gpu_resource:
-            os.environ[env_name] = ",".join(gpu_resource.gpu_ids)
-            logger.info(f"gpu_lock: {env_name}={os.environ[env_name]} (count={gpu_count})")
-            yield gpu_resource
-    except GpuLockError as exc:
-        pytest.fail(f"GPU lock failed: {exc}", pytrace=False)
 
 
 # ============================================================================

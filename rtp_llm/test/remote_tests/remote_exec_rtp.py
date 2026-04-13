@@ -209,6 +209,7 @@ def _collect_base_files(rootdir: Path) -> List[str]:
         "setup.py",
         "setup.cfg",
         "conftest.py",
+        "gpu_pin_early.py",
         "internal_source/ci/prepare_venv.py",
         "internal_source/ci/ci_pip_install.sh",
     ):

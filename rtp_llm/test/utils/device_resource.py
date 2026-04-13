@@ -343,25 +343,32 @@ def _get_visible_devices_env(device_name: str) -> str:
 
 if __name__ == "__main__":
     device_info = get_device_info()
+    require_count = int(
+        os.environ.get("GPU_COUNT", os.environ.get("WORLD_SIZE", "1"))
+    )
+
     if not device_info:
-        logging.info("no device detected, running without GPU isolation")
+        if require_count > 0:
+            raise RuntimeError(
+                f"[device_resource] GPU_COUNT={require_count} requested but no GPU detected "
+                f"(nvidia-smi / rocm-smi not found or returned no devices)"
+            )
+        logging.warning(
+            "[device_resource] no GPU detected, running without GPU isolation"
+        )
+        result = subprocess.run(sys.argv[1:])
+        sys.exit(result.returncode)
+
+    device_name, _ = device_info
+    env_name = _get_visible_devices_env(device_name)
+
+    with DeviceResource(require_count) as gpu_resource:
+        os.environ[env_name] = ",".join(gpu_resource.gpu_ids)
+        sys.stderr.write(
+            f"[device_resource] {env_name}={os.environ[env_name]} "
+            f"locked={gpu_resource.gpu_ids} pid={os.getpid()}\n"
+        )
+        sys.stderr.flush()
         result = subprocess.run(sys.argv[1:])
         logging.info("exitcode: %d", result.returncode)
         sys.exit(result.returncode)
-    else:
-        try:
-            from jit_sys_path_setup import setup_jit_cache
-            setup_jit_cache()
-        except Exception as e:
-            logging.warning(f"JIT cache setup skipped: {e}")
-
-        device_name, _ = device_info
-        require_count = int(
-            os.environ.get("WORLD_SIZE", os.environ.get("GPU_COUNT", "1"))
-        )
-        with DeviceResource(require_count) as gpu_resource:
-            env_name = _get_visible_devices_env(device_name)
-            os.environ[env_name] = ",".join(gpu_resource.gpu_ids)
-            result = subprocess.run(sys.argv[1:])
-            logging.info("exitcode: %d", result.returncode)
-            sys.exit(result.returncode)

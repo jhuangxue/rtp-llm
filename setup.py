@@ -1494,6 +1494,7 @@ if __name__ == "__main__":
         install_requires=all_deps if all_deps else None,
         ext_modules=[BazelExtension()],
         cmdclass=cmdclass,
+        py_modules=["gpu_pin_early"],
         entry_points={
             "pytest11": [
                 "remote-gpu = rtp_llm.test.remote_tests.plugin",

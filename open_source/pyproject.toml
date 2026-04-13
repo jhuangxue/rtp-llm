@@ -358,6 +358,7 @@ log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 
 # 默认命令行选项
 addopts = [
+    "-p", "gpu_pin_early",
     "-v",
     "--tb=short",
     "--strict-markers",
