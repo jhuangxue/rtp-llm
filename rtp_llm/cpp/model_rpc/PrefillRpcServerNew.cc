@@ -23,6 +23,12 @@ grpc::Status PrefillRpcServerNew::RemoteGenerateNew(grpc::ServerContext*        
     // reset request_id in prefill
     auto request_id = loading_cache_requests_.fetch_add(1, std::memory_order_relaxed);
     mutable_input->set_request_id(request_id);
+    if (applyTimelineGate(std::to_string(request_id),
+                          mutable_input->generate_config().gen_timeline(),
+                          mutable_input->generate_config().profile_step(),
+                          mutable_input->generate_config().profile_trace_name())) {
+        mutable_input->mutable_generate_config()->set_gen_timeline(true);
+    }
 
     // ignore inter_request_id in prefill
     auto modified_config = mutable_input->mutable_generate_config();
