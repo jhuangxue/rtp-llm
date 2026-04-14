@@ -513,7 +513,12 @@ void CudaGraphRunner::initCapture() {
 
         PyModelInputs inputs;
         // input_ids [tokens_nums] = [batch_size * num_tokens_per_bs]
-        inputs.input_ids     = torch::zeros({max_num_token_}, options_cuda_int32_);
+        // Use diverse input_ids (0, 1, 2, ...) instead of all zeros to ensure MoE router
+        // distributes tokens across different experts/EP ranks during capture warmup.
+        // All-zero inputs cause identical embeddings, making the router send all tokens
+        // to the same expert, leaving other EP ranks with zero tokens. FlashInfer's
+        // grouped_gemm_nt_masked kernel crashes on all-zero masked_m (nvfp4).
+        inputs.input_ids     = torch::arange(max_num_token_, options_cuda_int32_);
         inputs.input_hiddens = torch::zeros({max_num_token_, hidden_size_}, options_cuda_float_);
         // Setup attention inputs using the extracted function
         initCaptureAttentionInputs(inputs, max_bs_, num_tokens_per_bs_);
