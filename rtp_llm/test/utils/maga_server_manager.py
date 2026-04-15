@@ -202,6 +202,8 @@ class MagaServerManager(object):
                 _, alive = psutil.wait_procs(children, timeout=5)
                 for child in alive:
                     child.kill()  # 强制终止未退出的进程
+                # 等待被 kill 的子进程彻底回收，避免僵尸进程残留导致 KFD 显存泄漏
+                psutil.wait_procs(alive, timeout=5)
                 parent.terminate()
                 # 添加超时机制，避免永久阻塞
                 try:
@@ -216,6 +218,14 @@ class MagaServerManager(object):
             except Exception as e:
                 logging.warning("failed to get process with: " + str(e))
                 self._server_process = None
+        # 回收当前进程的所有僵尸子进程
+        try:
+            while True:
+                pid, _ = os.waitpid(-1, os.WNOHANG)
+                if pid == 0:
+                    break
+        except ChildProcessError:
+            pass
         if self._file_stream is not None:
             self._file_stream.close()
             self._file_stream = None
