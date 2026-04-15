@@ -103,7 +103,8 @@ def parse_args():
     perf.add_argument(
         "--result_dir",
         type=str,
-        default=os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "./perf_results"),
+        # PERF_RESULT_DIR takes priority over TEST_UNDECLARED_OUTPUTS_DIR
+        default=os.environ.get("PERF_RESULT_DIR") or os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "./perf_results"),
     )
     perf.add_argument("--decode_test_length", type=int, default=10)
 
