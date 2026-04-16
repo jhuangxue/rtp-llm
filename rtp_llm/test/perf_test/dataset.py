@@ -217,12 +217,14 @@ class DatasetLoader:
 def extract_arg(
     args_list: List[str], key: str, default: Optional[str] = None
 ) -> Optional[str]:
-    """Extract --key value from a CLI args list (without removing it)."""
+    """Extract --key value from a CLI args list (without removing it).
+    Returns the last match to follow argparse's last-wins convention."""
     flag = f"--{key}"
     prefix = f"--{key}="
+    result = default
     for i, arg in enumerate(args_list):
         if arg == flag and i + 1 < len(args_list):
-            return args_list[i + 1]
-        if arg.startswith(prefix):
-            return arg[len(prefix) :]
-    return default
+            result = args_list[i + 1]
+        elif arg.startswith(prefix):
+            result = arg[len(prefix):]
+    return result
