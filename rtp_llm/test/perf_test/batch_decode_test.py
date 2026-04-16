@@ -153,12 +153,13 @@ def _collect_timeline_files(result_dir: str) -> None:
     """Wait for async profiler saves and collect timeline JSON files into a timelines/ subdirectory."""
     time.sleep(3)
     timeline_dir = os.path.join(result_dir, "timelines")
+    # Exclude known result/config files; treat everything else as timeline traces
+    _RESULT_FILES = {"Decode_Result.json", "Prefill_Result.json", "test_info.json"}
     pattern = os.path.join(result_dir, "*.json")
     timeline_files = [
         f
         for f in glob.glob(pattern)
-        if os.path.basename(f).startswith(("profiler_ts", "profiler_"))
-        or "_wr" in os.path.basename(f)
+        if os.path.basename(f) not in _RESULT_FILES
     ]
     if timeline_files:
         os.makedirs(timeline_dir, exist_ok=True)

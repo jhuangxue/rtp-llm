@@ -23,6 +23,7 @@ def _curl_server_single_worker(
     wait_time: int,
     profile: bool = False,
     generate_config: Optional[Dict[str, Any]] = None,
+    profile_trace_name: str = "",
 ) -> ResponseInfo:
     req = {
         "prompt": input_query,
@@ -47,6 +48,8 @@ def _curl_server_single_worker(
         req["gen_timeline"] = True
         profile_step = min(decode_test_length, 3) if is_decode else 1
         req["profile_step"] = profile_step
+        if profile_trace_name:
+            req["profile_trace_name"] = profile_trace_name
     try:
         response = requests.post(
             f"http://127.0.0.1:{base_port}", json=req, timeout=wait_time
@@ -70,6 +73,7 @@ def _curl_server_batch_worker(
     wait_time: int,
     profile: bool = False,
     generate_config: Optional[Dict[str, Any]] = None,
+    profile_trace_name: str = "",
 ) -> List[ResponseInfo]:
     """Concurrently send requests, each with its own query string."""
     with ThreadPoolExecutor(max_workers=len(request_indices)) as executor:
@@ -85,6 +89,7 @@ def _curl_server_batch_worker(
                 wait_time,
                 profile,
                 generate_config,
+                profile_trace_name,
             )
             futures.append(future)
         return [f.result() for f in futures]
@@ -102,6 +107,7 @@ class BatchPerfImpl(object):
         decode_test_length: int = 10,
         profile: bool = True,
         generate_config: Optional[Dict[str, Any]] = None,
+        profile_trace_name: str = "",
     ):
         self.base_port = base_port
         self.dp_size = dp_size
@@ -126,6 +132,7 @@ class BatchPerfImpl(object):
         self.decode_test_length = decode_test_length
         self.profile = profile
         self.generate_config = generate_config or {}
+        self.profile_trace_name = profile_trace_name
 
     # 3 runs: warmup (JIT compile), measure timing, profile (optional, torch profiler affects accuracy)
     def run(self):
@@ -176,6 +183,7 @@ class BatchPerfImpl(object):
                     self.wait_time,
                     profile,
                     self.generate_config,
+                    self.profile_trace_name if profile else "",
                 )
             )
 

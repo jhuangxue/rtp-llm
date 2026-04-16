@@ -76,6 +76,8 @@ class GridRunner:
                         f"batch_size: {batch_size}, input_len: {input_len}"
                     )
 
+                    phase = "decode" if self._is_decode else "prefill"
+                    trace_name = f"bs{batch_size}_seq{input_len}_{phase}"
                     metric = BatchPerfImpl(
                         self._port,
                         self._dp_size,
@@ -86,6 +88,7 @@ class GridRunner:
                         self._decode_test_length,
                         True,
                         self._generate_config,
+                        trace_name,
                     ).run()
                     metrics_list.append(MetricState(input_len, batch_size, metric))
 

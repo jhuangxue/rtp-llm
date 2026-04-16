@@ -80,6 +80,7 @@ public:
     std::vector<int> end_think_token_ids;
     bool             gen_timeline        = false;
     int              profile_step        = 3;
+    std::string      profile_trace_name;
     bool             ignore_eos          = false;
     bool             reuse_cache         = true;
     bool             enable_device_cache = true;

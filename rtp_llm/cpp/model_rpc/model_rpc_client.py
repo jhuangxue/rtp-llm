@@ -130,6 +130,7 @@ def trans_input(input_py: GenerateInput):
     )
     generate_config_pb.gen_timeline = input_py.generate_config.gen_timeline
     generate_config_pb.profile_step = input_py.generate_config.profile_step
+    generate_config_pb.profile_trace_name = input_py.generate_config.profile_trace_name
     generate_config_pb.global_request_id = input_py.generate_config.global_request_id
     generate_config_pb.inter_request_id = input_py.generate_config.inter_request_id
     generate_config_pb.ignore_eos = input_py.generate_config.ignore_eos

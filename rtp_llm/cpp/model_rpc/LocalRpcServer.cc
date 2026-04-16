@@ -137,7 +137,7 @@ grpc::Status LocalRpcServer::GenerateStreamCall(grpc::ServerContext*            
     // configure the step-window profiler for this request. The profiler auto-stops after num_steps.
     // configure() internally enforces first-come-first-served if a session is already running.
     if (request_timeline && !force_timeline) {
-        engine_->startTimelineProfiling("", 0, request->generate_config().profile_step());
+        engine_->startTimelineProfiling(input->generate_config->profile_trace_name, 0, request->generate_config().profile_step());
     }
 
     // need to check client has buffer at first
