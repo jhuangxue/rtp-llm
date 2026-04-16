@@ -50,9 +50,6 @@ def trans_input(input_py: GenerateInput):
     input_pb = GenerateInputPB()
     input_pb.request_id = input_py.request_id
     input_pb.token_ids.extend(input_py.token_ids.reshape(-1).tolist())
-    input_pb.batch_group_size = input_py.batch_group_size
-    if hasattr(input_py, "batch_group_id") and input_py.batch_group_id != -1:
-        input_pb.batch_group_id.value = input_py.batch_group_id
 
     trans_multimodal_input(input_py, input_pb, input_py.generate_config)
     # check generate config is valid before enter into engine
@@ -146,11 +143,10 @@ def trans_input(input_py: GenerateInput):
     generate_config_pb.enable_remote_cache = (
         input_py.generate_config.enable_remote_cache
     )
+    generate_config_pb.inter_request_id = input_py.generate_config.inter_request_id
     trans_option_cast(
         generate_config_pb, input_py.generate_config, "trace_id", functools.partial(str)
     )
-    trans_option(generate_config_pb, input_py.generate_config, "batch_group_timeout")
-    trans_option(generate_config_pb, input_py.generate_config, "force_batch")
 
     for i in range(len(input_py.generate_config.stop_words_list)):
         stop_words = generate_config_pb.stop_words_list.rows.add()

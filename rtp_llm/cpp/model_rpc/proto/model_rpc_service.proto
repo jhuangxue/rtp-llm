@@ -82,8 +82,7 @@ message GenerateConfigPB {
     bool normalized_hidden_states = 39;
     int32 profile_step = 40;
     repeated RoleAddrPB role_addrs = 41;
-    reserved 42;
-    reserved "inter_request_id";
+    int64 inter_request_id = 42;
     bool ignore_eos = 43;
     float presence_penalty = 44;
     float frequency_penalty = 45;
@@ -96,9 +95,7 @@ message GenerateConfigPB {
     bool enable_device_cache = 52;
     bool enable_remote_cache = 53;
     string unique_key = 54;
-    google.protobuf.Int32Value force_batch = 55;
-    google.protobuf.Int32Value batch_group_timeout = 56;
-    string profile_trace_name = 57;
+    string profile_trace_name = 55;
 }
 
 message MMPreprocessConfigPB {
@@ -138,8 +135,6 @@ message GenerateInputPB {
     GenerateConfigPB generate_config = 4;
     string client_id = 5;
     int64 start_time = 6;
-    int32 batch_group_size = 7;
-    google.protobuf.Int64Value batch_group_id = 8;
 }
 
 message AuxInfoPB {
@@ -378,8 +373,7 @@ message UpdateEplbConfigRequestPB {
 
 message TaskInfoPB {
     int64 request_id = 1;
-    reserved 2;
-    reserved "inter_request_id";
+    int64 inter_request_id = 2;
     int64 prefix_length = 3;
     int64 input_length = 4;
     int64 waiting_time_ms = 5;

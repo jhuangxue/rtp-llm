@@ -13,7 +13,6 @@
 #include "rtp_llm/cpp/engine_base/WorkerStatusInfo.h"
 #include "rtp_llm/cpp/cache/Types.h"
 #include "rtp_llm/cpp/model_rpc/RpcErrorCode.h"
-#include "rtp_llm/cpp/model_rpc/BroadcastManager.h"
 #include "rtp_llm/cpp/model_rpc/GenerateContext.h"
 #include "rtp_llm/cpp/model_rpc/proto/model_rpc_service.grpc.pb.h"
 #include "rtp_llm/cpp/model_rpc/proto/model_rpc_service.pb.h"
@@ -59,14 +58,17 @@ public:
     grpc::Status StartProfile(grpc::ServerContext* context, const StartProfileRequestPB* request, EmptyPB* response);
 
     grpc::Status
-    StartProfileInternal(grpc::ServerContext* context, const StartProfileInternalRequestPB* request, EmptyPB* response);
-
-    grpc::Status
     UpdateSchedulerInfo(grpc::ServerContext* context, const UpdateSchedulerInfoRequestPB* request, EmptyPB* response);
 
     KVCacheInfo getCacheStatusInfo(int64_t latest_cache_version, bool need_cache_keys);
 
     WorkerStatusInfo getWorkerStatusInfo(int64_t latest_finished_version);
+
+    void addLora(const std::string&                        adapter_name,
+                 const rtp_llm::lora::loraLayerWeightsMap& lora_a_weights,
+                 const rtp_llm::lora::loraLayerWeightsMap& lora_b_weights);
+
+    void removeLora(const std::string& adapter_name);
 
     std::shared_ptr<EngineBase> getEngine() const {
         return engine_;
@@ -117,7 +119,6 @@ protected:
     std::atomic<size_t>                   onflight_requests_{0};
     std::shared_ptr<RpcServerRuntimeMeta> meta_;
     py::object                            weight_manager_;
-    std::shared_ptr<BroadcastManager>     profile_broadcaster_;
 };
 
 }  // namespace rtp_llm
