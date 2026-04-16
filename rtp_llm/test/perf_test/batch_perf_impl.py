@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import requests
 
@@ -22,7 +22,7 @@ def _curl_server_single_worker(
     decode_test_length: int,
     wait_time: int,
     profile: bool = False,
-    generate_config: Dict[str, Any] = {},
+    generate_config: Optional[Dict[str, Any]] = None,
 ) -> ResponseInfo:
     req = {
         "prompt": input_query,
@@ -33,7 +33,7 @@ def _curl_server_single_worker(
         },
     }
 
-    if generate_config:
+    if generate_config is not None:
         req["generate_config"].update(generate_config)
         if "top_k" in generate_config:
             req["top_k"] = generate_config["top_k"]
@@ -45,7 +45,8 @@ def _curl_server_single_worker(
 
     if profile:
         req["gen_timeline"] = True
-        req["profile_step"] = 1
+        profile_step = min(decode_test_length, 3) if is_decode else 1
+        req["profile_step"] = profile_step
     try:
         response = requests.post(
             f"http://127.0.0.1:{base_port}", json=req, timeout=wait_time
@@ -68,7 +69,7 @@ def _curl_server_batch_worker(
     decode_test_length: int,
     wait_time: int,
     profile: bool = False,
-    generate_config: Dict[str, Any] = {},
+    generate_config: Optional[Dict[str, Any]] = None,
 ) -> List[ResponseInfo]:
     """Concurrently send requests, each with its own query string."""
     with ThreadPoolExecutor(max_workers=len(request_indices)) as executor:
@@ -100,7 +101,7 @@ class BatchPerfImpl(object):
         wait_time: int = 100,
         decode_test_length: int = 10,
         profile: bool = True,
-        generate_config: Dict[str, Any] = {},
+        generate_config: Optional[Dict[str, Any]] = None,
     ):
         self.base_port = base_port
         self.dp_size = dp_size
@@ -124,7 +125,7 @@ class BatchPerfImpl(object):
         self.wait_time = wait_time
         self.decode_test_length = decode_test_length
         self.profile = profile
-        self.generate_config = generate_config
+        self.generate_config = generate_config or {}
 
     # 3 runs: warmup (JIT compile), measure timing, profile (optional, torch profiler affects accuracy)
     def run(self):
