@@ -2,7 +2,7 @@ import json
 import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from prettytable import PrettyTable
 
@@ -163,14 +163,14 @@ def create_metrics_table(
     dump_json_path: str,
     model_info: Dict[str, Any],
     title: str,
-    generate_config: Dict[str, Any] = {},
+    generate_config: Optional[Dict[str, Any]] = None,
 ) -> str:
     json_result: Dict[str, Any] = {
         "title": title,
         "mode": "grid",
         "metrics": [],
         "model_info": model_info,
-        "generate_config": generate_config,
+        "generate_config": generate_config or {},
     }
     main_table = PrettyTable()
     main_table.title = title
@@ -181,11 +181,20 @@ def create_metrics_table(
         "Input/Output",
         "Waiting Time(ms)",
     ] + (
-        ["Prefill Time(ms)"] if table_type == TableType.Prefill else ["Decode Time(ms)"]
+        ["Prefill Time(ms)", "Per-GPU Prefill TPS"]
+        if table_type == TableType.Prefill
+        else ["Decode Time(ms)", "Per-GPU Decode TPS"]
     )
+    tp_size = model_info.get("tp_size", 1)
     for metrics_item in metrics_list:
         metrics = metrics_item.metrics
         if metrics.success_requests > 0:
+            if table_type == TableType.Prefill:
+                tps = metrics.avg_input_len * 1000.0 / (metrics.avg_prefill_time * tp_size) if metrics.avg_prefill_time > 0 else 0.0
+                time_and_tps = [f"{metrics.avg_prefill_time:.2f}", f"{tps:.2f}"]
+            else:
+                tps = metrics_item.batch_size * 1000.0 / (metrics.avg_decode_time * tp_size) if metrics.avg_decode_time > 0 else 0.0
+                time_and_tps = [f"{metrics.avg_decode_time:.2f}", f"{tps:.2f}"]
             main_table.add_row(
                 [
                     metrics_item.input_len,
@@ -194,11 +203,7 @@ def create_metrics_table(
                     f"{metrics.avg_input_len:.0f}/{metrics.avg_output_len:.0f}",
                     f"{metrics.avg_wait_time:.2f}",
                 ]
-                + (
-                    [f"{metrics.avg_prefill_time:.2f}"]
-                    if table_type == TableType.Prefill
-                    else [f"{metrics.avg_decode_time:.2f}"]
-                )
+                + time_and_tps
             )
             json_result["metrics"].append(
                 {
@@ -208,6 +213,7 @@ def create_metrics_table(
                     "avg_wait_time": metrics.avg_wait_time,
                     "avg_prefill_time": metrics.avg_prefill_time,
                     "avg_decode_time": metrics.avg_decode_time,
+                    "tps_per_gpu": tps,
                 }
             )
         else:
@@ -216,6 +222,7 @@ def create_metrics_table(
                     metrics_item.input_len,
                     metrics_item.batch_size,
                     f"0/{metrics.total_requests}",
+                    "N/A",
                     "N/A",
                     "N/A",
                     "N/A",
