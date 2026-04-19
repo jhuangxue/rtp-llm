@@ -240,14 +240,14 @@ def create_distribution_metrics_table(
     dump_json_path: str,
     distribution_source: str,
     title: str,
-    generate_config: Dict[str, Any] = {},
+    generate_config: Optional[Dict[str, Any]] = None,
 ) -> str:
     json_result: Dict[str, Any] = {
         "title": title,
         "mode": "distribution",
         "distribution_source": distribution_source,
         "test_cases": [],
-        "generate_config": generate_config,
+        "generate_config": generate_config or {},
     }
     main_table = PrettyTable()
     main_table.title = title
