@@ -1,10 +1,7 @@
 import argparse
-import glob
 import json
 import logging
 import os
-import shutil
-import time
 from typing import Any, Dict, List, Optional
 
 from rtp_llm.test.perf_test.dataset import KNOWN_DATASETS, extract_arg
@@ -149,28 +146,6 @@ def resolve_perf_engine_paths(remaining: List[str]) -> List[str]:
     return out
 
 
-def _collect_timeline_files(result_dir: str) -> None:
-    """Wait for async profiler saves and collect timeline JSON files into a timelines/ subdirectory."""
-    time.sleep(3)
-    timeline_dir = os.path.join(result_dir, "timelines")
-    # Exclude known result/config files; treat everything else as timeline traces
-    _RESULT_FILES = {"Decode_Result.json", "Prefill_Result.json", "test_info.json"}
-    pattern = os.path.join(result_dir, "*.json")
-    timeline_files = [
-        f
-        for f in glob.glob(pattern)
-        if os.path.basename(f) not in _RESULT_FILES
-    ]
-    if timeline_files:
-        os.makedirs(timeline_dir, exist_ok=True)
-        for f in timeline_files:
-            dst = os.path.join(timeline_dir, os.path.basename(f))
-            shutil.move(f, dst)
-            logging.info(f"Collected timeline: {dst}")
-    else:
-        logging.info("No timeline files found in %s", result_dir)
-
-
 def _write_test_info(args: argparse.Namespace, remaining_args: List[str]) -> None:
     """Persist test configuration to result_dir for downstream consumers."""
     info = {
@@ -249,7 +224,6 @@ def main() -> str:
             decode_test_length=args.decode_test_length,
             generate_config=generate_config,
         ).run()
-        _collect_timeline_files(args.result_dir)
         server.stop()
     else:
         batch_size_list = [int(x) for x in args.batch_size.split(",")]
@@ -291,7 +265,6 @@ def main() -> str:
                 tp_size=tp_size,
                 generate_config=generate_config,
             ).run()
-        _collect_timeline_files(args.result_dir)
         server.stop()
 
     _write_test_info(args, remaining)

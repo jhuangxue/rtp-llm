@@ -19,13 +19,15 @@ class EngineServer:
         """Assemble CLI args and start MagaServerManager."""
         engine_cli = self._build_engine_cli(max_seq_len, max_concurrency)
 
+        timeline_dir = os.path.join(self._args.result_dir, "timelines")
+        os.makedirs(timeline_dir, exist_ok=True)
         env: Dict[str, str] = {
             "USE_BATCH_DECODE_SCHEDULER": "1",
             "FAKE_BALANCE_EXPERT": "1",
             "BATCH_DECODE_SCHEDULER_WARMUP_TYPE": (
                 "0" if self._args.partial in (0, 1) else "1"
             ),
-            "TORCH_CUDA_PROFILER_DIR": self._args.result_dir,
+            "TORCH_CUDA_PROFILER_DIR": timeline_dir,
         }
 
         logging.info(f"Starting server with engine CLI: {engine_cli}")
