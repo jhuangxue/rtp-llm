@@ -206,11 +206,11 @@ def main() -> str:
         )
 
         needed_seq_len = max(all_seq_lens) + args.decode_test_length
-        effective_max_seq_len = max(needed_seq_len, args.max_seq_len)
+        args.max_seq_len = max(needed_seq_len, args.max_seq_len)
 
         server = EngineServer(args, remaining)
         server.start(
-            max_seq_len=effective_max_seq_len,
+            max_seq_len=args.max_seq_len,
             max_concurrency=max(int(k) for k in batch_seq_len_map),
         )
 
@@ -229,9 +229,13 @@ def main() -> str:
         batch_size_list = [int(x) for x in args.batch_size.split(",")]
         input_len_list = [int(x) for x in args.input_len.split(",")]
 
+        # Grid auto-sizes max_seq_len to what inputs actually need; args.max_seq_len CLI
+        # is ignored (Distribution mode is where the CLI acts as a floor).
+        args.max_seq_len = max(input_len_list) + args.decode_test_length
+
         server = EngineServer(args, remaining)
         server.start(
-            max_seq_len=max(input_len_list) + args.decode_test_length,
+            max_seq_len=args.max_seq_len,
             max_concurrency=max(batch_size_list),
         )
 
